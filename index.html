@@ -1,0 +1,391 @@
+<!doctype html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>景到 · 把数码 RAW，冲成胶片</title>
+<meta name="description" content="景到：基于开源 SpektraLab 的 macOS 胶片与相纸冲印模拟，光谱级计算，不是滤镜。">
+<link rel="icon" href="assets/icon.png">
+<style>
+:root{
+  --bg:#0a0908;--bg2:#121010;--ink:#f3eee8;--sub:#a59e96;--faint:#6d6760;
+  --org:#ff6a1f;--org2:#ffb070;--line:rgba(255,255,255,.09);
+  --sans:"PingFang SC",-apple-system,"Helvetica Neue","Microsoft YaHei",sans-serif;
+  --serif:"Songti SC","STSong","Noto Serif SC","Source Han Serif SC",serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth;background:var(--bg)}
+body{font-family:var(--sans);color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+img{display:block;max-width:100%}
+::selection{background:var(--org);color:#000}
+
+/* 胶片颗粒：整页覆盖的动态噪点 */
+#grain{position:fixed;inset:-100px;pointer-events:none;z-index:50;opacity:.09;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 1.4 -.2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  animation:grain .9s steps(6) infinite}
+@keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-37px,23px)}40%{transform:translate(19px,-41px)}60%{transform:translate(-11px,47px)}80%{transform:translate(43px,9px)}100%{transform:translate(0,0)}}
+
+/* 顶栏 */
+nav{position:fixed;top:0;left:0;right:0;z-index:40;display:flex;align-items:center;justify-content:space-between;
+  padding:18px clamp(20px,4vw,56px);transition:background .4s,backdrop-filter .4s}
+nav.solid{background:rgba(10,9,8,.72);backdrop-filter:blur(18px) saturate(1.4);border-bottom:1px solid var(--line)}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:.08em}
+.brand img{width:34px;height:34px}
+.brand span{font-family:var(--serif);font-size:22px}
+nav .links{display:flex;gap:clamp(14px,2.6vw,34px);font-size:15px;color:var(--sub)}
+nav .links a:hover{color:var(--ink)}
+@media(max-width:720px){nav .links a:not(.gh){display:none}}
+
+/* ---------- 首屏：小孔看胶片 ---------- */
+#hero{position:relative;height:100svh;min-height:640px;overflow:hidden;cursor:none}
+#hero .layer{position:absolute;inset:0;background-size:cover;background-position:center}
+#hero .raw{background-image:url(assets/FEI08859_before.jpg);filter:saturate(.55) brightness(.6) contrast(.92)}
+#hero .film{background-image:url(assets/FEI08859_after.jpg);
+  -webkit-mask-image:radial-gradient(circle var(--r,190px) at var(--x,62%) var(--y,46%),#000 62%,transparent 100%);
+          mask-image:radial-gradient(circle var(--r,190px) at var(--x,62%) var(--y,46%),#000 62%,transparent 100%)}
+#hero .ring{position:absolute;left:var(--x,62%);top:var(--y,46%);width:calc(var(--r,190px)*2);height:calc(var(--r,190px)*2);
+  transform:translate(-50%,-50%);border-radius:50%;border:1px solid rgba(255,190,140,.35);pointer-events:none;
+  box-shadow:0 0 80px rgba(255,106,31,.25),inset 0 0 40px rgba(255,106,31,.15)}
+#hero .ring::after{content:"";position:absolute;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:var(--org);box-shadow:0 0 16px var(--org)}
+#hero .shade{position:absolute;inset:0;background:linear-gradient(90deg,rgba(10,9,8,.92) 0%,rgba(10,9,8,.55) 38%,rgba(10,9,8,0) 62%),linear-gradient(0deg,var(--bg) 0%,transparent 28%)}
+#hero .copy{position:absolute;left:clamp(22px,6vw,96px);bottom:clamp(90px,16vh,170px);max-width:720px;pointer-events:none}
+.kicker{font-size:13px;letter-spacing:.42em;color:var(--org2);text-transform:uppercase;margin-bottom:22px}
+#hero h1{font-family:var(--serif);font-weight:900;font-size:clamp(84px,15vw,210px);line-height:.9;letter-spacing:.06em}
+#hero h1 .r{color:var(--org);text-shadow:0 0 40px rgba(255,106,31,.5)}
+#hero .tag{font-size:clamp(22px,2.6vw,34px);font-weight:600;margin-top:26px;line-height:1.45}
+#hero .tag em{font-style:normal;background:linear-gradient(90deg,var(--org),var(--org2));-webkit-background-clip:text;color:transparent}
+#hero .quote{font-family:var(--serif);color:var(--sub);margin-top:18px;font-size:16px;letter-spacing:.12em}
+#hero .hint{position:absolute;right:clamp(22px,4vw,56px);bottom:42px;font-size:13px;color:var(--sub);letter-spacing:.2em;display:flex;align-items:center;gap:10px}
+#hero .hint i{width:8px;height:8px;border-radius:50%;background:var(--org);box-shadow:0 0 12px var(--org);animation:pulse 1.6s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.btns{display:flex;gap:14px;margin-top:38px;pointer-events:auto;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:10px;padding:14px 26px;border-radius:999px;font-weight:600;font-size:16px;transition:transform .25s,box-shadow .25s,background .25s}
+.btn.pri{background:var(--org);color:#120800;box-shadow:0 10px 40px rgba(255,106,31,.35)}
+.btn.pri:hover{transform:translateY(-2px);box-shadow:0 16px 50px rgba(255,106,31,.5)}
+.btn.ghost{border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.04);backdrop-filter:blur(8px)}
+.btn.ghost:hover{background:rgba(255,255,255,.1)}
+.btn svg{width:18px;height:18px}
+
+/* 胶片条跑马灯 */
+.strip{position:relative;padding:22px 0;background:#000;overflow:hidden;border-block:1px solid #1d1a18}
+.strip::before,.strip::after{content:"";position:absolute;left:0;right:0;height:14px;
+  background:repeating-linear-gradient(90deg,transparent 0 14px,#2a2522 14px 30px,transparent 30px 44px);z-index:2;opacity:.9}
+.strip::before{top:4px}.strip::after{bottom:4px}
+.strip .track{display:flex;gap:14px;width:max-content;animation:roll 60s linear infinite}
+.strip img{height:190px;width:auto;border-radius:3px;filter:saturate(1.05)}
+@keyframes roll{to{transform:translateX(-50%)}}
+.strip .edge{position:absolute;top:2px;left:0;right:0;font:600 10px/1 ui-monospace,Menlo,monospace;color:#d8822f;letter-spacing:.3em;white-space:nowrap;z-index:3;opacity:.75;animation:roll 90s linear infinite;width:max-content}
+
+/* 通用段落 */
+section{position:relative;padding:clamp(90px,13vw,170px) clamp(20px,6vw,96px)}
+.sec-head{max-width:980px;margin-bottom:clamp(40px,6vw,70px)}
+.sec-head h2{font-size:clamp(38px,5.6vw,76px);line-height:1.12;font-weight:800;letter-spacing:-.01em}
+.sec-head h2 em{font-style:normal;background:linear-gradient(90deg,var(--org),var(--org2));-webkit-background-clip:text;color:transparent}
+.sec-head p{color:var(--sub);font-size:clamp(17px,1.6vw,21px);line-height:1.75;margin-top:20px;max-width:720px}
+.reveal{opacity:0;transform:translateY(40px);transition:opacity 1s cubic-bezier(.2,.7,.2,1),transform 1s cubic-bezier(.2,.7,.2,1)}
+.reveal.in{opacity:1;transform:none}
+
+/* 前后对比滑块 */
+.compare-list{display:flex;flex-direction:column;gap:clamp(50px,7vw,90px)}
+.cmp-wrap{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:40px;align-items:center}
+.cmp-wrap:nth-child(even){grid-template-columns:300px minmax(0,1fr)}
+.cmp-wrap:nth-child(even) .cmp{order:2}
+@media(max-width:900px){.cmp-wrap,.cmp-wrap:nth-child(even){grid-template-columns:1fr}.cmp-wrap:nth-child(even) .cmp{order:0}}
+.cmp{position:relative;border-radius:18px;overflow:hidden;aspect-ratio:2000/1134;cursor:ew-resize;user-select:none;touch-action:pan-y;
+  box-shadow:0 40px 120px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.06)}
+.cmp img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.cmp .top{clip-path:inset(0 0 0 var(--p,50%))}
+.cmp .bar{position:absolute;top:0;bottom:0;left:var(--p,50%);width:2px;background:#fff;transform:translateX(-1px);box-shadow:0 0 18px rgba(0,0,0,.6)}
+.cmp .knob{position:absolute;top:50%;left:var(--p,50%);width:54px;height:54px;transform:translate(-50%,-50%);border-radius:50%;
+  background:rgba(10,9,8,.55);backdrop-filter:blur(10px);border:2px solid #fff;display:grid;place-items:center;font-size:18px;letter-spacing:4px}
+.cmp .lab{position:absolute;bottom:16px;padding:7px 14px;border-radius:999px;font-size:13px;font-weight:600;background:rgba(0,0,0,.55);backdrop-filter:blur(8px)}
+.cmp .lab.l{left:16px;color:#ddd}.cmp .lab.r{right:16px;color:var(--org2)}
+.cmp-info .no{font:700 14px/1 ui-monospace,Menlo,monospace;color:var(--org);letter-spacing:.2em}
+.cmp-info h3{font-size:30px;margin:14px 0 14px;font-weight:700}
+.cmp-info p{color:var(--sub);line-height:1.8;font-size:16px}
+.chip{display:inline-block;margin-top:18px;padding:8px 14px;border-radius:10px;background:#18140f;border:1px solid #2c241c;font-size:14px;line-height:1.8;color:#e8c9a8}
+.chip b{color:var(--org);margin-right:6px;white-space:nowrap}
+.chip span{white-space:nowrap}
+.chip i{font-style:normal;color:#5a4a3c;margin:0 10px}
+
+/* 工序 */
+#pipeline{background:radial-gradient(1200px 600px at 80% 0%,rgba(255,106,31,.12),transparent 70%),var(--bg2)}
+.flow{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;counter-reset:s}
+@media(max-width:900px){.flow{grid-template-columns:1fr 1fr}}
+@media(max-width:520px){.flow{grid-template-columns:1fr}}
+.stage{position:relative;padding:34px 28px 30px;border-radius:22px;background:linear-gradient(160deg,#1b1714,#110f0d);border:1px solid var(--line);overflow:hidden;min-height:260px}
+.stage::before{counter-increment:s;content:"0" counter(s);font:800 64px/1 var(--sans);position:absolute;right:18px;top:12px;color:rgba(255,255,255,.04)}
+.stage .ico{width:46px;height:46px;border-radius:14px;display:grid;place-items:center;background:rgba(255,106,31,.12);color:var(--org);margin-bottom:22px}
+.stage h4{font-size:22px;margin-bottom:10px}
+.stage p{color:var(--sub);line-height:1.7;font-size:15px}
+.stage .glow{position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,var(--org),transparent);transform:scaleX(0);transform-origin:left;transition:transform 1.2s .3s}
+.reveal.in .stage .glow,.stage.in .glow{transform:scaleX(1)}
+.spec{display:flex;flex-wrap:wrap;gap:12px;margin-top:40px}
+.spec span{padding:10px 18px;border-radius:999px;border:1px solid var(--line);color:var(--sub);font-size:14px}
+.spec b{color:var(--ink);margin-right:6px}
+
+/* 界面 */
+#ui .shot{position:relative;perspective:1800px}
+#ui .shot img{border-radius:16px;box-shadow:0 60px 160px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.08);transform:rotateX(14deg) scale(.94);transform-origin:50% 100%;transition:transform 1.4s cubic-bezier(.2,.7,.2,1)}
+#ui .shot.in img{transform:none}
+#ui .shot::after{content:"";position:absolute;left:10%;right:10%;bottom:-60px;height:120px;background:radial-gradient(closest-side,rgba(255,106,31,.25),transparent);filter:blur(20px);z-index:-1}
+
+/* 功能网格 */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:clamp(60px,8vw,110px)}
+@media(max-width:900px){.grid{grid-template-columns:1fr 1fr}}
+@media(max-width:560px){.grid{grid-template-columns:1fr}}
+.feat{padding:30px;border-radius:20px;background:#13110f;border:1px solid var(--line);transition:border-color .3s,transform .3s}
+.feat:hover{border-color:rgba(255,106,31,.45);transform:translateY(-4px)}
+.feat .v{font:700 12px/1 ui-monospace,Menlo,monospace;color:var(--org);letter-spacing:.15em}
+.feat h4{font-size:21px;margin:14px 0 10px}
+.feat p{color:var(--sub);font-size:15px;line-height:1.7}
+
+/* 作品墙 */
+.wall{columns:3 320px;column-gap:16px}
+.wall figure{break-inside:avoid;margin-bottom:16px;position:relative;border-radius:14px;overflow:hidden}
+.wall img{width:100%;transition:transform 1.2s cubic-bezier(.2,.7,.2,1)}
+.wall figure:hover img{transform:scale(1.04)}
+.wall figcaption{position:absolute;left:0;right:0;bottom:0;padding:40px 18px 14px;background:linear-gradient(transparent,rgba(0,0,0,.75));font-size:13px;color:#e8d8c8;opacity:0;transition:opacity .4s}
+.wall figure:hover figcaption{opacity:1}
+
+/* 开源 */
+#open .card{display:grid;grid-template-columns:1.2fr 1fr;gap:40px;padding:clamp(30px,5vw,60px);border-radius:28px;
+  background:linear-gradient(135deg,#1a1512,#0f0d0c);border:1px solid var(--line);position:relative;overflow:hidden}
+#open .card::before{content:"";position:absolute;right:-120px;top:-120px;width:420px;height:420px;border-radius:50%;background:radial-gradient(closest-side,rgba(255,106,31,.22),transparent)}
+@media(max-width:860px){#open .card{grid-template-columns:1fr}}
+.repo{display:flex;align-items:center;gap:16px;padding:20px 22px;border-radius:16px;background:#0b0a09;border:1px solid #2a231d;margin-top:26px;transition:border-color .3s}
+.repo:hover{border-color:var(--org)}
+.repo svg{width:34px;height:34px;flex:none}
+.repo .u{font:600 15px/1.4 ui-monospace,Menlo,monospace;word-break:break-all}
+.repo .d{color:var(--faint);font-size:13px;margin-top:4px}
+#open ul{list-style:none;color:var(--sub);line-height:1.9;font-size:15px}
+#open ul li::before{content:"— ";color:var(--org)}
+#open ul a{color:var(--ink);border-bottom:1px solid rgba(255,255,255,.2)}
+.nodl{margin-top:22px;padding:14px 18px;border-radius:12px;background:rgba(255,106,31,.08);border:1px solid rgba(255,106,31,.25);color:#f0c9a8;font-size:14px;line-height:1.7}
+
+/* 联系 */
+#contact{text-align:center;padding-bottom:80px;background:radial-gradient(900px 500px at 50% 100%,rgba(255,106,31,.16),transparent 70%)}
+#contact .sec-head{margin-inline:auto}
+#contact .sec-head p{margin-inline:auto}
+.contacts{display:flex;justify-content:center;gap:24px;flex-wrap:wrap}
+.ct{width:min(380px,100%);padding:34px;border-radius:24px;background:#13110f;border:1px solid var(--line);text-align:left}
+.ct .t{display:flex;align-items:center;gap:12px;color:var(--sub);font-size:14px;letter-spacing:.12em}
+.ct .t svg{width:22px;height:22px}
+.ct .val{font:600 clamp(17px,1.8vw,21px)/1.4 ui-monospace,Menlo,monospace;margin:18px 0 20px;overflow-wrap:anywhere}
+.ct .qr{background:#fff;border-radius:16px;padding:16px;width:200px;margin:4px 0 20px}
+.ct .row{display:flex;gap:10px;flex-wrap:wrap}
+.mini{padding:10px 16px;border-radius:10px;border:1px solid var(--line);background:#1a1714;font-size:14px;cursor:pointer;color:var(--ink);font-family:inherit;transition:background .2s}
+.mini:hover{background:#26201b}
+.mini.ok{border-color:var(--org);color:var(--org2)}
+footer{padding:40px clamp(20px,6vw,96px) 50px;border-top:1px solid var(--line);display:flex;justify-content:space-between;gap:20px;flex-wrap:wrap;color:var(--faint);font-size:13px;line-height:1.8}
+footer img{height:16px;opacity:.85;display:inline-block;vertical-align:-3px;margin-right:8px}
+
+.hint .ht{display:none}
+@media(hover:none){#hero{cursor:auto}.hint .hm{display:none}.hint .ht{display:inline}}
+@media(prefers-reduced-motion:reduce){.strip .track,.strip .edge{animation:none}.reveal{opacity:1;transform:none}}
+</style>
+</head>
+<body>
+<div id="grain"></div>
+
+<nav id="nav">
+  <a class="brand" href="#hero"><img src="assets/icon.png" alt=""><span>景到</span></a>
+  <div class="links">
+    <a href="#compare">对比</a><a href="#pipeline">原理</a><a href="#ui">界面</a><a href="#gallery">作品</a><a href="#contact">联系</a>
+    <a class="gh" href="https://github.com/mrfayshenzhen66-bit/jingdao-mac" target="_blank" rel="noopener">GitHub ↗</a>
+  </div>
+</nav>
+
+<!-- 首屏 -->
+<header id="hero">
+  <div class="layer raw"></div>
+  <div class="layer film"></div>
+  <div class="ring"></div>
+  <div class="shade"></div>
+  <div class="copy">
+    <div class="kicker">JINGDAO · FILM LAB FOR MAC</div>
+    <h1>景<span class="r">到</span></h1>
+    <div class="tag">把数码 RAW，<em>冲成胶片。</em><br>不是滤镜，是一整条冲印工序。</div>
+    <div class="quote">景到，在午有端，与景长，说在端。——《墨子·经下》</div>
+    <div class="btns">
+      <a class="btn pri" href="#compare">看实拍对比 ↓</a>
+      <a class="btn ghost" href="https://github.com/mrfayshenzhen66-bit/jingdao-mac" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        开源仓库</a>
+    </div>
+  </div>
+  <div class="hint"><i></i><span class="hm">移动光标，透过小孔看胶片</span><span class="ht">小孔里是冲印后的样子</span></div>
+</header>
+
+<div class="strip" aria-hidden="true">
+  <div class="edge">KODAK PORTRA 800 ▸ 24 ▸ 24A ▸ KODAK PORTRA 400 ▸ 25 ▸ 25A ▸ PORTRA ENDURA ▸ 26 ▸ 26A ▸ JINGDAO ▸ 27 ▸ 27A ▸ KODAK PORTRA 800 ▸ 24 ▸ 24A ▸ KODAK PORTRA 400 ▸ 25 ▸ 25A ▸ PORTRA ENDURA ▸ 26 ▸ 26A ▸ JINGDAO ▸ 27 ▸ 27A ▸ KODAK PORTRA 800 ▸ 24 ▸ 24A ▸ KODAK PORTRA 400 ▸ 25 ▸ 25A ▸ PORTRA ENDURA ▸ 26 ▸ 26A ▸ JINGDAO ▸ 27 ▸ 27A ▸</div>
+  <div class="track" id="track"></div>
+</div>
+
+<!-- 对比 -->
+<section id="compare">
+  <div class="sec-head reveal">
+    <div class="kicker">BEFORE / AFTER</div>
+    <h2>同一张 RAW，<br><em>冲出来是另一回事。</em></h2>
+    <p>左边是相机 RAW 用苹果默认方式解码的原样，右边是在景到里选胶片、选相纸、调好后的成片。拖动中间的把手对比。<br>拍摄：索尼 α7R V。</p>
+  </div>
+  <div class="compare-list">
+    <div class="cmp-wrap reveal">
+      <div class="cmp" data-p="52"><img src="assets/FEI01991_before.jpg" alt="RAW 原片：夜晚灯笼"><img class="top" src="assets/FEI01991_after.jpg" alt="景到冲印：夜晚灯笼"><div class="bar"></div><div class="knob">◂▸</div><span class="lab l">RAW 直出</span><span class="lab r">景到冲印</span></div>
+      <div class="cmp-info"><div class="no">01 · 夜</div><h3>灯笼巷</h3><p>几乎全黑的环境，只有灯笼在发光。高光留住纸伞的纹理，暗部沉下去，灯笼的红像真的在胶片上晕开。</p><div class="chip"><span><b>胶片</b>Kodak Portra 800</span><i>|</i><span><b>相纸</b>Portra Endura</span></div></div>
+    </div>
+    <div class="cmp-wrap reveal">
+      <div class="cmp" data-p="48"><img src="assets/FEI00573_before.jpg" alt="RAW 原片：楼宇"><img class="top" src="assets/FEI00573_after.jpg" alt="景到冲印：楼宇"><div class="bar"></div><div class="knob">◂▸</div><span class="lab l">RAW 直出</span><span class="lab r">景到冲印</span></div>
+      <div class="cmp-info"><div class="no">02 · 光影</div><h3>斜阳里的阳台</h3><p>把影子压暗，只留下斜阳扫过的那一道暖光。胶片的反差曲线让明暗之间不再发灰。</p><div class="chip"><span><b>胶片</b>Kodak Portra 800</span><i>|</i><span><b>相纸</b>Portra Endura</span></div></div>
+    </div>
+    <div class="cmp-wrap reveal">
+      <div class="cmp" data-p="50"><img src="assets/FEI08859_before.jpg" alt="RAW 原片：湖与山"><img class="top" src="assets/FEI08859_after.jpg" alt="景到冲印：湖与山"><div class="bar"></div><div class="knob">◂▸</div><span class="lab l">RAW 直出</span><span class="lab r">景到冲印</span></div>
+      <div class="cmp-info"><div class="no">03 · 风景</div><h3>湖与山</h3><p>天更透，水更蓝，岩壁的红褐色被胶片染料重新“显影”出来，层次不靠饱和度硬拉。</p><div class="chip"><span><b>胶片</b>Kodak Portra 400</span><i>|</i><span><b>相纸</b>Portra Endura</span></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 原理 -->
+<section id="pipeline">
+  <div class="sec-head reveal">
+    <div class="kicker">SPECTRAL PIPELINE</div>
+    <h2>不是滤镜，<br>是一整条<em>冲印工序</em>。</h2>
+    <p>滤镜只改像素的颜色。景到按光谱一步步算：光怎样落在胶片上，乳剂怎样显影，放大机怎样把负片印到相纸上，最后再扫描输出。全程在 Mac 的 GPU 上计算。</p>
+  </div>
+  <div class="flow">
+    <div class="stage reveal"><div class="ico">◐</div><h4>光谱曝光</h4><p>把照片还原成 81 个波长的光，按胶片三层乳剂的感光曲线曝光。</p><div class="glow"></div></div>
+    <div class="stage reveal"><div class="ico">◎</div><h4>胶片显影</h4><p>颗粒、光晕、DIR 层间抑制逐项模拟；胶片的感光与显影曲线来自厂商实测数据。</p><div class="glow"></div></div>
+    <div class="stage reveal"><div class="ico">▣</div><h4>放大印相</h4><p>负片经放大机印到相纸上，「配光」自动测光、调滤色，像在暗房里一样。</p><div class="glow"></div></div>
+    <div class="stage reveal"><div class="ico">◇</div><h4>扫描输出</h4><p>扫描相纸成像，再用曲线、色轮、HSL 做最后的微调，导出成片。</p><div class="glow"></div></div>
+  </div>
+  <div class="spec reveal">
+    <span><b>30+</b>款胶片与相纸</span><span><b>81</b>个波长光谱计算</span><span><b>Metal</b>GPU 全程计算</span><span><b>RAW</b>直接打开</span><span><b>16-bit</b>TIFF / JPEG / PNG 导出</span>
+  </div>
+</section>
+
+<!-- 界面 -->
+<section id="ui">
+  <div class="sec-head reveal">
+    <div class="kicker">THE APP</div>
+    <h2>像暗房一样工作，<br><em>但比暗房顺手。</em></h2>
+    <p>左边选胶片和相纸，右边是显影后的曲线、色轮和 HSL。顶部五步引导：选胶片、选相纸、放大机、微调、导出。</p>
+  </div>
+  <div class="shot reveal"><img src="assets/ui_lake.jpg" alt="景到真实界面截图"></div>
+  <div class="grid">
+    <div class="feat reveal"><div class="v">21.0</div><h4>拖得更顺</h4><p>最费时的光晕算一次就存下，拖曝光、颗粒时预览更快。</p></div>
+    <div class="feat reveal"><div class="v">21.1</div><h4>HSL 与色轮</h4><p>8 个颜色分别调色相、饱和度、明度，画布与导出一致。</p></div>
+    <div class="feat reveal"><div class="v">20.8</div><h4>五步新手引导</h4><p>点哪一步，侧栏就自动展开、定位、高亮。</p></div>
+    <div class="feat reveal"><div class="v">PRESET</div><h4>胶片 + 相纸组合</h4><p>记住你的搭配，新照片自动沿用，多套预设一键切换。</p></div>
+    <div class="feat reveal"><div class="v">EXPORT</div><h4>透明 PNG 签名</h4><p>导出时带上你的签名，拖到想要的位置，批量按比例放置。</p></div>
+    <div class="feat reveal"><div class="v">中文</div><h4>全中文界面</h4><p>菜单、右键、状态栏、提示都是中文，一键旋转、栏目随你排。</p></div>
+  </div>
+</section>
+
+<!-- 作品 -->
+<section id="gallery">
+  <div class="sec-head reveal">
+    <div class="kicker">PRINTS</div>
+    <h2>冲出来的<em>样片</em>。</h2>
+    <p>全部为景到真实输出，作者手动调色。</p>
+  </div>
+  <div class="wall reveal">
+    <figure><img src="assets/FEI00543_after.jpg" alt="博美犬，Portra 800" loading="lazy"><figcaption>Kodak Portra 800 · Portra Endura</figcaption></figure>
+    <figure><img src="assets/FEI01991_after.jpg" alt="灯笼，Portra 800" loading="lazy"><figcaption>Kodak Portra 800 · Portra Endura</figcaption></figure>
+    <figure><img src="assets/FEI08859_after.jpg" alt="湖与山，Portra 400" loading="lazy"><figcaption>Kodak Portra 400 · Portra Endura</figcaption></figure>
+    <figure><img src="assets/FEI00573_after.jpg" alt="阳台光影，Portra 800" loading="lazy"><figcaption>Kodak Portra 800 · Portra Endura</figcaption></figure>
+    <figure><img src="assets/ui_lantern.jpg" alt="景到界面：灯笼调色" loading="lazy"><figcaption>调色中的界面</figcaption></figure>
+  </div>
+</section>
+
+<!-- 开源 -->
+<section id="open">
+  <div class="card reveal">
+    <div>
+      <div class="kicker">OPEN SOURCE</div>
+      <h2 style="font-size:clamp(32px,4vw,52px);line-height:1.15">源码全部公开。</h2>
+      <a class="repo" href="https://github.com/mrfayshenzhen66-bit/jingdao-mac" target="_blank" rel="noopener">
+        <svg viewBox="0 0 16 16" fill="#f3eee8"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        <div><div class="u">github.com/mrfayshenzhen66-bit/jingdao-mac</div><div class="d">景到 · 基于 SpektraLab 1.3.5 的非官方修改版（macOS 胶片与相纸冲印模拟）</div></div>
+      </a>
+      <div class="nodl">本页不提供安装包下载。需要的话可以按仓库里的说明自行构建，或者通过下方方式联系我。</div>
+    </div>
+    <div>
+      <ul>
+        <li>基于开源项目 <a href="https://github.com/JamesQiu2005/SpektraLab" target="_blank" rel="noopener">SpektraLab</a>（GPL-3.0）</li>
+        <li>胶片模拟与胶片数据来自 <a href="https://github.com/andreavolpato/spektrafilm" target="_blank" rel="noopener">spektrafilm</a>（CC BY-SA 4.0）</li>
+        <li>非官方修改版，未获原作者认可</li>
+        <li>名称与图标为原创，不含上游名称和 Logo</li>
+        <li>适用：Apple 芯片 Mac，macOS 15 及以上</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- 联系 -->
+<section id="contact">
+  <div class="sec-head reveal">
+    <div class="kicker">CONTACT</div>
+    <h2>聊聊<em>胶片</em>？</h2>
+    <p>使用问题、调色交流、合作，都可以找我。</p>
+  </div>
+  <div class="contacts reveal">
+    <div class="ct">
+      <div class="t"><svg viewBox="0 0 24 24" fill="#2dc100"><path d="M9.5 4C5.36 4 2 6.86 2 10.4c0 2.02 1.1 3.82 2.82 5L4.2 17.6l2.5-1.3c.88.25 1.82.4 2.8.4.25 0 .5-.01.74-.03A5.6 5.6 0 0110 15c0-3.3 3.13-6 7-6 .26 0 .52.01.77.04C17.1 6.17 13.67 4 9.5 4zm-3 3.6a1 1 0 110 2 1 1 0 010-2zm6 0a1 1 0 110 2 1 1 0 010-2zM17 10c-3.31 0-6 2.24-6 5s2.69 5 6 5c.7 0 1.37-.1 2-.29L21 21l-.53-1.83C21.43 18.25 23 16.75 23 15c0-2.76-2.69-5-6-5zm-2 2.6a.9.9 0 110 1.8.9.9 0 010-1.8zm4 0a.9.9 0 110 1.8.9.9 0 010-1.8z"/></svg>微信</div>
+      <div class="val">Feifei_Chemicophysic</div>
+      <img class="qr" src="assets/wechat_qr.png" alt="微信二维码">
+      <div class="row"><button class="mini" data-copy="Feifei_Chemicophysic">复制微信号</button></div>
+    </div>
+    <div class="ct">
+      <div class="t"><svg viewBox="0 0 24 24"><path fill="#ea4335" d="M2 6.5v11A1.5 1.5 0 003.5 19H6V9.8l6 4.5 6-4.5V19h2.5a1.5 1.5 0 001.5-1.5v-11c0-1.85-2.1-2.9-3.6-1.8L12 8.6 5.6 4.7C4.1 3.6 2 4.65 2 6.5z"/></svg>Gmail</div>
+      <div class="val">mrfayshenzhen66<wbr>@gmail.com</div>
+      <div class="row">
+        <a class="mini" href="mailto:mrfayshenzhen66@gmail.com">写邮件</a>
+        <button class="mini" data-copy="mrfayshenzhen66@gmail.com">复制邮箱</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div><img src="assets/mrfay.png" alt="MRFAY">景到 · 个人修改版 · 作者 mrfay</div>
+  <div>基于 SpektraLab（GPL-3.0）· 胶片数据 spektrafilm（CC BY-SA 4.0）· 非官方，未获原作者认可</div>
+</footer>
+
+<script>
+// 首屏：小孔跟随光标；触屏或闲置时自己游走
+(()=>{const h=document.getElementById('hero');let tx=.62,ty=.46,cx=tx,cy=ty,last=0,r=190;
+ h.addEventListener('pointermove',e=>{const b=h.getBoundingClientRect();tx=(e.clientX-b.left)/b.width;ty=(e.clientY-b.top)/b.height;last=performance.now()});
+ function tick(t){if(t-last>2500){tx=.6+.18*Math.cos(t/2600);ty=.42+.14*Math.sin(t/1900)}
+  cx+=(tx-cx)*.12;cy+=(ty-cy)*.12;const rr=r+14*Math.sin(t/700);
+  h.style.setProperty('--x',(cx*100)+'%');h.style.setProperty('--y',(cy*100)+'%');h.style.setProperty('--r',rr+'px');requestAnimationFrame(tick)}
+ const fit=()=>{r=Math.max(120,Math.min(240,innerWidth*.14))};fit();addEventListener('resize',fit);requestAnimationFrame(tick)})();
+
+// 顶栏
+addEventListener('scroll',()=>document.getElementById('nav').classList.toggle('solid',scrollY>40),{passive:true});
+
+// 胶片条
+(()=>{const t=document.getElementById('track');const fs=['FEI01991','FEI08859','FEI00543','FEI00573'];
+ const html=fs.concat(fs).map(f=>`<img src="assets/${f}_after.jpg" alt="" loading="lazy">`).join('');t.innerHTML=html+html;})();
+
+// 前后对比滑块
+document.querySelectorAll('.cmp').forEach(el=>{
+ el.style.setProperty('--p',el.dataset.p+'%');let drag=false;
+ const set=e=>{const b=el.getBoundingClientRect();const p=Math.min(100,Math.max(0,(e.clientX-b.left)/b.width*100));el.style.setProperty('--p',p+'%')};
+ el.addEventListener('pointerdown',e=>{drag=true;el.setPointerCapture(e.pointerId);set(e)});
+ el.addEventListener('pointermove',e=>{if(drag)set(e)});
+ el.addEventListener('pointerup',()=>drag=false);el.addEventListener('pointercancel',()=>drag=false);
+});
+
+// 进场动画
+const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
+document.querySelectorAll('.reveal,.shot').forEach(el=>io.observe(el));
+
+// 复制
+document.querySelectorAll('[data-copy]').forEach(b=>b.addEventListener('click',async()=>{
+ const t=b.textContent;try{await navigator.clipboard.writeText(b.dataset.copy)}catch(e){const i=document.createElement('textarea');i.value=b.dataset.copy;document.body.appendChild(i);i.select();document.execCommand('copy');i.remove()}
+ b.textContent='已复制 ✓';b.classList.add('ok');setTimeout(()=>{b.textContent=t;b.classList.remove('ok')},1600)}));
+</script>
+</body>
+</html>
